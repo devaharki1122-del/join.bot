@@ -1,0 +1,2 @@
+# join.bot
+Im kurdish
