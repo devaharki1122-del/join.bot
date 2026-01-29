@@ -5,9 +5,9 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 # ───────── CONFIG ─────────
 api_id = 32052427
 api_hash = "d9e14b1e99ac33e20d41479a47d2622f"
-bot_token = "8094743137:AAFkASXCn4x7apzLgBfRn-r06m7hoHPvgzI"
+bot_token = "8094743137:AAHFEM50VPcLfPi52rWMEEYK9-roZN0UXAI"
 
-BOT_USERNAME = "@Join_deva_bot"
+BOT_USERNAME = "Join_deva_bot"
 
 FORCE_CHANNELS = [
     "@chanaly_boot",
@@ -21,11 +21,17 @@ CREDIT = (
     "━━━━━━━━━━━━━━"
 )
 
-app = Client("bot", api_id, api_hash, bot_token=bot_token)
+app = Client(
+    "bot",
+    api_id=api_id,
+    api_hash=api_hash,
+    bot_token=bot_token
+)
 
 # ───────── DB ─────────
 db = sqlite3.connect("data.db", check_same_thread=False)
 cur = db.cursor()
+
 cur.execute("""
 CREATE TABLE IF NOT EXISTS groups(
     group_id INTEGER PRIMARY KEY,
@@ -38,24 +44,30 @@ CREATE TABLE IF NOT EXISTS groups(
 """)
 db.commit()
 
-# ───────── /start (PRIVATE) ─────────
+# ───────── FORCE JOIN CHECK ─────────
+async def check_force_join(client, user_id):
+    for ch in FORCE_CHANNELS:
+        try:
+            m = await client.get_chat_member(ch, user_id)
+            if m.status not in ["member", "administrator", "creator"]:
+                return False
+        except:
+            return False
+    return True
+
+# ───────── /start PRIVATE ─────────
 @app.on_message(filters.private & filters.command("start"))
 async def start(client, message):
     user = message.from_user
-    not_joined = []
 
-    for ch in FORCE_CHANNELS:
-        try:
-            m = await client.get_chat_member(ch, user.id)
-            if m.status not in ["member", "administrator", "owner"]:
-                not_joined.append(ch)
-        except:
-            not_joined.append(ch)
-
-    if not_joined:
+    ok = await check_force_join(client, user.id)
+    if not ok:
         buttons = [
-            [InlineKeyboardButton(f"✅ Join {c}", url=f"https://t.me/{c.replace('@','')}")]
-            for c in not_joined
+            [InlineKeyboardButton(
+                f"✅ Join {ch}",
+                url=f"https://t.me/{ch.replace('@','')}"
+            )]
+            for ch in FORCE_CHANNELS
         ]
         return await message.reply(
             "🔒 **Force Join Required**\n\n"
@@ -87,7 +99,7 @@ async def start(client, message):
 @app.on_message(filters.group & filters.command("deva"))
 async def deva(client, message):
     member = await client.get_chat_member(message.chat.id, message.from_user.id)
-    if member.status not in ["administrator", "owner"]:
+    if member.status not in ["administrator", "creator"]:
         return await message.reply("❌ تۆ admin نیت")
 
     cur.execute("INSERT OR IGNORE INTO groups VALUES (?,?,?,?,?,?)",
@@ -104,12 +116,12 @@ async def deva(client, message):
         ])
     )
 
-# ───────── CALLBACKS ─────────
+# ───────── CALLBACK ─────────
 @app.on_callback_query()
-async def cb(client, query):
+async def callbacks(client, query):
     chat_id = query.message.chat.id
     member = await client.get_chat_member(chat_id, query.from_user.id)
-    if member.status not in ["administrator", "owner"]:
+    if member.status not in ["administrator", "creator"]:
         return await query.answer("❌ admin نیت", show_alert=True)
 
     cur.execute("UPDATE groups SET waiting=? WHERE group_id=?",
@@ -125,7 +137,7 @@ async def cb(client, query):
 
 # ───────── SAVE DATA ─────────
 @app.on_message(filters.group)
-async def save(client, message):
+async def save_data(client, message):
     cur.execute("SELECT waiting FROM groups WHERE group_id=?", (message.chat.id,))
     row = cur.fetchone()
     if not row or not row[0]:
@@ -134,15 +146,20 @@ async def save(client, message):
     w = row[0]
 
     if w == "photo" and message.photo:
-        cur.execute("UPDATE groups SET photo=?, waiting=NULL WHERE group_id=?",
-                    (message.photo[-1].file_id, message.chat.id))
+        cur.execute(
+            "UPDATE groups SET photo=?, waiting=NULL WHERE group_id=?",
+            (message.photo[-1].file_id, message.chat.id)
+        )
         db.commit()
         return await message.reply("✅ وێنە هەڵگیرا")
 
-    if w in ["ch1","ch2","ch3"] and message.text and message.text.startswith("@"):
-        cur.execute(f"UPDATE groups SET {w}=?, waiting=NULL WHERE group_id=?",
-                    (message.text, message.chat.id))
+    if w in ["ch1", "ch2", "ch3"] and message.text and message.text.startswith("@"):
+        cur.execute(
+            f"UPDATE groups SET {w}=?, waiting=NULL WHERE group_id=?",
+            (message.text, message.chat.id)
+        )
         db.commit()
         return await message.reply("✅ جەنال هەڵگیرا")
 
+# ───────── RUN ─────────
 app.run()
